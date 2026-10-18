@@ -1,59 +1,35 @@
 syntax = "proto3";
 
-// Order Management Bounded Context
-// Database: PostgreSQL (order-db) - bảng orders, order_details, outbox_events
-// Phát sự kiện OrderCreated lên Kafka topic "order-created" bằng Outbox Pattern
+// Order Service (Order Management Bounded Context): bang Order, OrderDetail (+ OutboxEvent).
+// DB: PostgreSQL (Order DB). Duoc API Gateway goi qua gRPC.
 package order;
 
 service OrderService {
-  rpc CreateOrder (CreateOrderRequest) returns (OrderResponse);
-  rpc GetOrder (GetOrderRequest) returns (OrderResponse);
-  rpc ListOrders (ListOrdersRequest) returns (ListOrdersResponse);
-  rpc Health (HealthRequest) returns (HealthResponse);
+  rpc CreateOrder (CreateOrderRequest) returns (OrderReply);  // BPM buoc 5-9
+  rpc ListOrders  (Empty)              returns (OrderList);
+  rpc GetOrder    (GetOrderRequest)    returns (OrderReply);
 }
 
-message OrderItemInput {
-  int32 pid = 1;
-  int32 qty = 2;
-}
+message Empty {}
+message OrderItemInput { int32 pid = 1; int32 qty = 2; }
 
 message CreateOrderRequest {
-  int32 uid = 1;
-  repeated OrderItemInput items = 2;
+  int32 uid   = 1;   // tu JWT (Gateway)
+  int32 score = 2;   // diem thanh vien lay tu Customer Service (BPM buoc 4)
+  repeated OrderItemInput items = 3;
 }
 
-message GetOrderRequest {
-  int32 oid = 1;
-  int32 uid = 2;      // người đang gọi
-  string role = 3;    // admin xem được mọi đơn hàng
-}
+message OrderItem { int32 pid = 1; int32 qty = 2; double unit_price = 3; }
 
-message ListOrdersRequest {
-  int32 uid = 1;
-  string role = 2;
-}
-
-message OrderItem {
-  int32 pid = 1;
-  int32 qty = 2;
-  double unit_price = 3;
-}
-
-message OrderResponse {
-  int32 oid = 1;
-  int32 uid = 2;
-  double discount = 3;       // phần trăm giảm giá (ví dụ 10 = 10%)
-  double total_amount = 4;   // tổng tiền sau giảm giá
-  string created_at = 5;     // thời gian đặt hàng (ISO-8601)
+message OrderReply {
+  int32  oid          = 1;
+  int32  uid          = 2;
+  double discount     = 3;   // % giam gia
+  double subtotal     = 4;
+  double total_amount = 5;
   repeated OrderItem items = 6;
+  string shipment_status   = 7;
 }
 
-message ListOrdersResponse {
-  repeated OrderResponse items = 1;
-}
-
-message HealthRequest {}
-message HealthResponse {
-  string status = 1;
-  string kafka = 2;
-}
+message OrderList { repeated OrderReply items = 1; }
+message GetOrderRequest { int32 oid = 1; }

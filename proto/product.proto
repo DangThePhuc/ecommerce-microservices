@@ -1,78 +1,41 @@
 syntax = "proto3";
 
-// Product Catalog Bounded Context
-// Database: MongoDB (product-db) - collection products
+// Product Service (Product Catalog Bounded Context): Product (pid, pname, price, quantity).
+// DB: MongoDB (Product DB). Duoc API Gateway goi (CRUD) va Order Service goi (kiem tra/cap nhat ton kho).
 package product;
 
 service ProductService {
-  rpc ListProducts (ListProductsRequest) returns (ListProductsResponse);
-  rpc GetProduct (GetProductRequest) returns (ProductResponse);
-  rpc CreateProduct (CreateProductRequest) returns (ProductResponse);
-  rpc UpdateProduct (UpdateProductRequest) returns (ProductResponse);
-  rpc DeleteProduct (GetProductRequest) returns (DeleteProductResponse);
+  // --- Gateway ---
+  rpc ListProducts  (Empty)                returns (ProductList);
+  rpc GetProduct    (GetProductRequest)    returns (Product);
+  rpc CreateProduct (CreateProductRequest) returns (Product);        // ADMIN
+  rpc UpdateProduct (UpdateProductRequest) returns (MessageReply);   // ADMIN
+  rpc DeleteProduct (GetProductRequest)    returns (MessageReply);   // ADMIN
 
-  // Dùng cho luồng đặt hàng (Order Service gọi qua gRPC)
-  rpc CheckStock (StockRequest) returns (StockResponse);     // bước 6: kiểm tra số lượng
-  rpc ReserveStock (StockRequest) returns (StockResponse);   // bước 7: trừ tồn kho (all-or-nothing)
-  rpc ReleaseStock (StockRequest) returns (ReleaseResponse); // bù trừ khi lưu Order thất bại
-
-  rpc Health (HealthRequest) returns (HealthResponse);
+  // --- Order Service (BPM buoc 6, 7) ---
+  rpc CheckProducts    (CheckProductsRequest) returns (ProductList);     // tra price, quantity
+  rpc UpdateInventory  (InventoryRequest)     returns (InventoryReply);  // tru ton kho all-or-nothing
+  rpc RestoreInventory (InventoryRequest)     returns (InventoryReply);  // hoan kho khi tao Order that bai
 }
 
-message ListProductsRequest {}
-message ListProductsResponse {
-  repeated ProductResponse items = 1;
-}
+message Empty {}
+message GetProductRequest { int32 pid = 1; }
+message Product { int32 pid = 1; string pname = 2; double price = 3; int32 quantity = 4; }
+message ProductList { repeated Product items = 1; }
 
-message GetProductRequest {
-  int32 pid = 1;
-}
-
-message CreateProductRequest {
-  string pname = 1;
-  double price = 2;
-  int32 quantity = 3;
-}
-
+message CreateProductRequest { string pname = 1; double price = 2; int32 quantity = 3; }
 message UpdateProductRequest {
-  int32 pid = 1;
-  string pname = 2;
-  double price = 3;
-  int32 quantity = 4;
+  int32  pid          = 1;
+  bool   has_pname    = 2;
+  string pname        = 3;
+  bool   has_price    = 4;
+  double price        = 5;
+  bool   has_quantity = 6;
+  int32  quantity     = 7;
 }
+message MessageReply { string message = 1; int32 pid = 2; }
 
-message ProductResponse {
-  int32 pid = 1;
-  string pname = 2;
-  double price = 3;
-  int32 quantity = 4;
-}
-
-message DeleteProductResponse {
-  int32 pid = 1;
-}
-
-message StockItem {
-  int32 pid = 1;
-  int32 qty = 2;
-}
-message StockRequest {
-  repeated StockItem items = 1;
-}
-message StockLine {
-  int32 pid = 1;
-  string pname = 2;
-  double unit_price = 3;
-  int32 qty = 4;
-}
-message StockResponse {
-  repeated StockLine items = 1;
-}
-message ReleaseResponse {
-  bool released = 1;
-}
-
-message HealthRequest {}
-message HealthResponse {
-  string status = 1;
-}
+message CheckProductsRequest { repeated int32 pids = 1; }
+message StockItem { int32 pid = 1; int32 qty = 2; }
+message InventoryRequest { repeated StockItem items = 1; }
+message InventoryReply { bool success = 1; }

@@ -2,13 +2,7 @@
   "name": "shipment-service",
   "version": "1.0.0",
   "private": true,
-  "description": "Shipment Bounded Context",
   "main": "src/index.js",
   "scripts": { "start": "node src/index.js" },
-  "dependencies": {
-    "@grpc/grpc-js": "1.12.2",
-    "@grpc/proto-loader": "0.7.13",
-    "kafkajs": "2.2.4",
-    "mongodb": "6.10.0"
-  }
+  "dependencies": { "@grpc/grpc-js": "^1.10.10", "@grpc/proto-loader": "^0.7.13", "kafkajs": "^2.2.4", "mongodb": "^6.8.0" }
 }

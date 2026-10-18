@@ -1,20 +1,19 @@
-# Dependencies
+# dependencies
 node_modules/
 
-# Secrets / môi trường - KHÔNG commit
+# secrets - KHONG day len GitHub
 .env
-.env.*
 
-# Logs
+# logs & OS
 *.log
 npm-debug.log*
-
-# OS / IDE
 .DS_Store
 Thumbs.db
+
+# IDE
 .idea/
 .vscode/
 
-# Build / coverage
+# build / coverage
 dist/
 coverage/

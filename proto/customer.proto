@@ -1,51 +1,27 @@
 syntax = "proto3";
 
-// Customer & Membership Bounded Context
-// Database: PostgreSQL (customer-db) - bảng memberships, customers
+// Customer Service (Customer & Membership Bounded Context): bang Customer, Membership.
+// DB: PostgreSQL (Customer DB). Duoc API Gateway goi qua gRPC.
 package customer;
 
 service CustomerService {
-  rpc CreateCustomer (CreateCustomerRequest) returns (CustomerResponse);
-  rpc GetCustomer (GetCustomerRequest) returns (CustomerResponse);
-  rpc UpdateCustomer (UpdateCustomerRequest) returns (CustomerResponse);
-  // Order Service gọi RPC này để lấy score phục vụ tính discount
-  rpc GetMembership (GetCustomerRequest) returns (MembershipResponse);
-  rpc Health (HealthRequest) returns (HealthResponse);
+  rpc CreateCustomer (CreateCustomerRequest) returns (Customer);        // sau khi dang ky: hang Normal
+  rpc GetCustomer    (GetCustomerRequest)    returns (Customer);        // BPM buoc 3: uid, fullname, mid
+  rpc UpdateCustomer (UpdateCustomerRequest) returns (MessageReply);
+  rpc GetMembership  (GetCustomerRequest)    returns (Membership);      // BPM buoc 4: mname, score
 }
 
-message CreateCustomerRequest {
-  int32 uid = 1;        // tham chiếu tới User của Identity & Access
-  string fullname = 2;
-  int32 mid = 3;        // 0 = dùng hạng mặc định (mid = 1, score = 10)
-}
-
-message GetCustomerRequest {
-  int32 uid = 1;
-}
+message CreateCustomerRequest { int32 uid = 1; string fullname = 2; }
+message GetCustomerRequest    { int32 uid = 1; }
 
 message UpdateCustomerRequest {
-  int32 uid = 1;
-  string fullname = 2;  // rỗng = không đổi
-  int32 mid = 3;        // 0 = không đổi
+  int32  uid          = 1;
+  bool   has_fullname = 2;
+  string fullname     = 3;
+  bool   has_mid      = 4;
+  int32  mid          = 5;
 }
 
-message CustomerResponse {
-  int32 uid = 1;
-  string fullname = 2;
-  int32 mid = 3;
-  string mname = 4;
-  int32 score = 5;
-}
-
-message MembershipResponse {
-  int32 uid = 1;
-  string fullname = 2;
-  int32 mid = 3;
-  string mname = 4;
-  int32 score = 5;
-}
-
-message HealthRequest {}
-message HealthResponse {
-  string status = 1;
-}
+message Customer   { int32 uid = 1; string fullname = 2; int32 mid = 3; }
+message Membership { int32 uid = 1; int32 mid = 2; string mname = 3; int32 score = 4; }
+message MessageReply { string message = 1; int32 id = 2; }

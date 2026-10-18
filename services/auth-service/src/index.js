@@ -1,108 +1,137 @@
+// Auth Service - Identity & Access Bounded Context. DB: PostgreSQL (Auth DB): users, roles.
+// Giao tiep: gRPC (goi tu API Gateway). Co them HTTP /health cho Docker.
+const path = require('path');
+const http = require('http');
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { Pool } = require('pg');
-const { loadProto, err, wrap, startServer, retry } = require('./grpc');
+const grpc = require('@grpc/grpc-js');
+const protoLoader = require('@grpc/proto-loader');
 
-const PORT = process.env.GRPC_PORT || 50051;
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
-const JWT_EXPIRES_IN = parseInt(process.env.JWT_EXPIRES_IN || '3600', 10);
-
+const PORT = Number(process.env.PORT || 3001);
+const GRPC_PORT = Number(process.env.GRPC_PORT || 50051);
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = Number(process.env.JWT_EXPIRES_IN || 3600);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-// Role: 1 = admin, 2 = normal, 3 = shipment_staff
-const ROLES = ['admin', 'normal', 'shipment_staff'];
+class GrpcError extends Error {
+  constructor(code, message) { super(message); this.grpcCode = code; }
+}
+const wrap = (fn) => async (call, cb) => {
+  try { cb(null, await fn(call)); } catch (e) {
+    if (e instanceof GrpcError) return cb({ code: e.grpcCode, details: e.message });
+    console.error('[auth]', e);
+    cb({ code: grpc.status.INTERNAL, details: 'Internal server error' });
+  }
+};
 
-async function migrate() {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function retry(fn, name, tries = 30) {
+  for (let i = 1; i <= tries; i++) {
+    try { return await fn(); } catch (e) {
+      console.error(`[auth] ${name} chua san sang (${i}/${tries}): ${e.message}`);
+      await sleep(2000);
+    }
+  }
+  throw new Error(`${name} failed`);
+}
+
+async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS roles (
-      roleid   SERIAL PRIMARY KEY,
+      roleid SERIAL PRIMARY KEY,
       rolename VARCHAR(50) UNIQUE NOT NULL
-    );
+    )`);
+  await pool.query(`
+    INSERT INTO roles(rolename) VALUES ('ADMIN'),('CUSTOMER'),('SHIPMENT_STAFF')
+    ON CONFLICT (rolename) DO NOTHING`);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
-      uid      SERIAL PRIMARY KEY,
-      username VARCHAR(50)  UNIQUE NOT NULL,
+      uid SERIAL PRIMARY KEY,
+      username VARCHAR(50) UNIQUE NOT NULL,
       password VARCHAR(255) NOT NULL,
-      roleid   INT NOT NULL REFERENCES roles(roleid)
+      roleid INT NOT NULL REFERENCES roles(roleid)
+    )`);
+  const seeds = [
+    [process.env.ADMIN_USERNAME, process.env.ADMIN_PASSWORD, 'ADMIN'],
+    [process.env.STAFF_USERNAME, process.env.STAFF_PASSWORD, 'SHIPMENT_STAFF'],
+  ];
+  for (const [u, p, role] of seeds) {
+    if (!u || !p) continue;
+    await pool.query(
+      `INSERT INTO users(username, password, roleid)
+       VALUES ($1, $2, (SELECT roleid FROM roles WHERE rolename=$3)) ON CONFLICT (username) DO NOTHING`,
+      [u, await bcrypt.hash(p, 10), role]
     );
-  `);
-  for (const r of ROLES) {
-    await pool.query('INSERT INTO roles (rolename) VALUES ($1) ON CONFLICT (rolename) DO NOTHING', [r]);
   }
-  await seedUser(process.env.ADMIN_USERNAME || 'admin', process.env.ADMIN_PASSWORD || 'Admin@123', 'admin');
-  await seedUser(process.env.STAFF_USERNAME || 'staff', process.env.STAFF_PASSWORD || 'Staff@123', 'shipment_staff');
 }
 
-async function seedUser(username, password, role) {
-  const hash = await bcrypt.hash(password, 10);
-  await pool.query(
-    `INSERT INTO users (username, password, roleid)
-     VALUES ($1, $2, (SELECT roleid FROM roles WHERE rolename = $3))
-     ON CONFLICT (username) DO NOTHING`,
-    [username, hash, role]
-  );
-}
+const def = protoLoader.loadSync(path.join(__dirname, '../proto/auth.proto'), {
+  keepCase: true, longs: Number, defaults: true,
+});
+const authPkg = grpc.loadPackageDefinition(def).auth;
 
-const DUMMY_HASH = bcrypt.hashSync('dummy-password', 10);
-const USERNAME_RE = /^[A-Za-z0-9_.-]{3,50}$/;
-
-const impl = {
-  Register: wrap('Register', async ({ username, password }) => {
-    if (!USERNAME_RE.test(username || '')) throw err.invalid('username must be 3-50 chars (letters, digits, _ . -)');
-    if (!password || password.length < 6 || password.length > 72) throw err.invalid('password must be 6-72 characters');
+const handlers = {
+  Register: wrap(async (call) => {
+    const { username, password } = call.request;
+    if (!username || username.trim().length < 3 || !password || password.length < 6) {
+      throw new GrpcError(grpc.status.INVALID_ARGUMENT, 'username (>=3 ky tu) va password (>=6 ky tu) la bat buoc');
+    }
     const hash = await bcrypt.hash(password, 10);
     try {
-      const { rows } = await pool.query(
-        `INSERT INTO users (username, password, roleid)
-         VALUES ($1, $2, (SELECT roleid FROM roles WHERE rolename = 'normal'))
-         RETURNING uid`,
-        [username, hash]
+      const r = await pool.query(
+        `INSERT INTO users(username, password, roleid)
+         VALUES ($1, $2, (SELECT roleid FROM roles WHERE rolename='CUSTOMER')) RETURNING uid`,
+        [username.trim(), hash]
       );
-      return { uid: rows[0].uid, role: 'normal' };
+      return { uid: r.rows[0].uid };
     } catch (e) {
-      if (e.code === '23505') throw err.exists('username already exists');
+      if (e.code === '23505') throw new GrpcError(grpc.status.ALREADY_EXISTS, 'Username da ton tai');
       throw e;
     }
   }),
 
-  Login: wrap('Login', async ({ username, password }) => {
-    if (!username || !password) throw err.invalid('username and password are required');
-    const { rows } = await pool.query(
-      `SELECT u.uid, u.password, r.rolename FROM users u JOIN roles r ON r.roleid = u.roleid WHERE u.username = $1`,
-      [username]
-    );
-    const user = rows[0];
-    // So sánh hash cả khi không có user để tránh lộ thông tin qua thời gian phản hồi
-    const ok = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
-    if (!user || !ok) throw err.unauthenticated('invalid username or password');
-    const token = jwt.sign({ sub: String(user.uid), role: user.rolename }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  Login: wrap(async (call) => {
+    const { username, password } = call.request;
+    if (!username || !password) throw new GrpcError(grpc.status.INVALID_ARGUMENT, 'username va password la bat buoc');
+    const r = await pool.query(
+      `SELECT u.uid, u.username, u.password, r.rolename
+       FROM users u JOIN roles r ON r.roleid = u.roleid WHERE u.username=$1`, [username]);
+    const u = r.rows[0];
+    if (!u || !(await bcrypt.compare(password, u.password))) {
+      throw new GrpcError(grpc.status.UNAUTHENTICATED, 'Sai username hoac password');
+    }
+    const token = jwt.sign({ sub: String(u.uid), role: u.rolename, username: u.username }, JWT_SECRET, {
+      algorithm: 'HS256', expiresIn: JWT_EXPIRES_IN,
+    });
     return { access_token: token, token_type: 'Bearer', expires_in: JWT_EXPIRES_IN };
   }),
 
-  VerifyToken: wrap('VerifyToken', async ({ token }) => {
+  VerifyToken: wrap(async (call) => {
     try {
-      const p = jwt.verify(token, JWT_SECRET);
-      return { valid: true, uid: parseInt(p.sub, 10), role: p.role, exp: p.exp };
-    } catch (_) {
-      return { valid: false, uid: 0, role: '', exp: 0 };
+      const p = jwt.verify(call.request.token, JWT_SECRET, { algorithms: ['HS256'] });
+      return { uid: Number(p.sub), role: p.role, username: p.username || '' };
+    } catch {
+      throw new GrpcError(grpc.status.UNAUTHENTICATED, 'Token khong hop le hoac het han');
     }
   }),
 
-  DeleteUser: wrap('DeleteUser', async ({ uid }) => {
-    const r = await pool.query('DELETE FROM users WHERE uid = $1', [uid]);
-    return { deleted: r.rowCount > 0 };
-  }),
-
-  Health: wrap('Health', async () => {
-    await pool.query('SELECT 1');
-    return { status: 'UP' };
+  DeleteUser: wrap(async (call) => {
+    await pool.query('DELETE FROM users WHERE uid=$1', [call.request.uid]);
+    return { success: true };
   }),
 };
 
 (async () => {
-  await retry('auth-db', migrate);
-  const proto = loadProto('auth.proto');
-  await startServer(proto.auth.AuthService.service, impl, PORT);
-})().catch((e) => {
-  console.error('Fatal:', e);
-  process.exit(1);
-});
+  await retry(initDb, 'postgres');
+  const server = new grpc.Server();
+  server.addService(authPkg.AuthService.service, handlers);
+  server.bindAsync(`0.0.0.0:${GRPC_PORT}`, grpc.ServerCredentials.createInsecure(), (err) => {
+    if (err) throw err;
+    console.log(`[auth] gRPC listening on ${GRPC_PORT}`);
+  });
+  http.createServer(async (req, res) => {
+    try { await pool.query('SELECT 1'); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{"status":"UP","service":"auth-service"}'); }
+    catch { res.writeHead(503); res.end('{"status":"DOWN"}'); }
+  }).listen(PORT, () => console.log(`[auth] health on ${PORT}`));
+})();

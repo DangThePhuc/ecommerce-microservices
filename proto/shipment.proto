@@ -1,42 +1,18 @@
 syntax = "proto3";
 
-// Shipment Bounded Context
-// Database: MongoDB (shipment-db) - collection shipments
-// Shipment được tạo BẤT ĐỒNG BỘ khi consume sự kiện OrderCreated từ Kafka
+// Shipment Service (Shipment Bounded Context): Shipment (shipid, oid, status) + Tracking.
+// DB: MongoDB (Shipment DB). Shipment duoc tao tu Kafka event OrderCreated; REST/gRPC chi de xem va cap nhat trang thai.
 package shipment;
 
 service ShipmentService {
-  rpc GetShipment (GetShipmentRequest) returns (ShipmentResponse);
-  rpc GetShipmentByOrder (GetShipmentByOrderRequest) returns (ShipmentResponse);
-  rpc UpdateShipmentStatus (UpdateStatusRequest) returns (ShipmentResponse);
-  rpc Health (HealthRequest) returns (HealthResponse);
+  rpc GetShipment          (GetShipmentRequest)          returns (Shipment);
+  rpc ListShipments        (ListShipmentsRequest)        returns (ShipmentList);
+  rpc UpdateShipmentStatus (UpdateShipmentStatusRequest) returns (Shipment);  // SHIPMENT_STAFF / ADMIN
 }
 
-message GetShipmentRequest {
-  int32 shipid = 1;
-  int32 uid = 2;      // người đang gọi
-  string role = 3;
-}
+message GetShipmentRequest { int32 shipid = 1; }
+message ListShipmentsRequest { bool has_oid = 1; int32 oid = 2; }
+message UpdateShipmentStatusRequest { int32 shipid = 1; string status = 2; }
 
-message GetShipmentByOrderRequest {
-  int32 oid = 1;
-  int32 uid = 2;
-  string role = 3;
-}
-
-message UpdateStatusRequest {
-  int32 shipid = 1;
-  string status = 2;  // PENDING | SHIPPING | DELIVERED | CANCELLED
-}
-
-message ShipmentResponse {
-  int32 shipid = 1;
-  int32 oid = 2;
-  string status = 3;
-}
-
-message HealthRequest {}
-message HealthResponse {
-  string status = 1;
-  string kafka = 2;
-}
+message Shipment { int32 shipid = 1; int32 oid = 2; string status = 3; }
+message ShipmentList { repeated Shipment items = 1; }

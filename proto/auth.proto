@@ -1,56 +1,24 @@
 syntax = "proto3";
 
-// Identity & Access Bounded Context
-// Database: PostgreSQL (auth-db) - bảng roles, users
+// Auth Service (Identity & Access Bounded Context): bang User, Role. DB: PostgreSQL (Auth DB)
+// Duoc API Gateway goi qua gRPC.
 package auth;
 
 service AuthService {
-  rpc Register (RegisterRequest) returns (RegisterResponse);
-  rpc Login (LoginRequest) returns (LoginResponse);
-  // API Gateway gọi RPC này để xác thực JWT (không chia sẻ JWT secret với gateway)
-  rpc VerifyToken (VerifyTokenRequest) returns (VerifyTokenResponse);
-  // Dùng để bù trừ (compensation) khi tạo Customer thất bại sau khi đã tạo User
-  rpc DeleteUser (DeleteUserRequest) returns (DeleteUserResponse);
-  rpc Health (HealthRequest) returns (HealthResponse);
+  rpc Register    (RegisterRequest)    returns (RegisterReply);     // tao User voi role CUSTOMER
+  rpc Login       (LoginRequest)       returns (LoginReply);        // tra JWT
+  rpc VerifyToken (VerifyTokenRequest) returns (VerifyTokenReply);  // Gateway kiem tra JWT (BPM buoc 2)
+  rpc DeleteUser  (DeleteUserRequest)  returns (DeleteUserReply);   // bu tru khi tao Customer that bai
 }
 
-message RegisterRequest {
-  string username = 1;
-  string password = 2;
-}
-message RegisterResponse {
-  int32 uid = 1;
-  string role = 2;
-}
+message RegisterRequest { string username = 1; string password = 2; }
+message RegisterReply   { int32 uid = 1; }
 
-message LoginRequest {
-  string username = 1;
-  string password = 2;
-}
-message LoginResponse {
-  string access_token = 1;
-  string token_type = 2;
-  int32 expires_in = 3;
-}
+message LoginRequest { string username = 1; string password = 2; }
+message LoginReply   { string access_token = 1; string token_type = 2; int32 expires_in = 3; }
 
-message VerifyTokenRequest {
-  string token = 1;
-}
-message VerifyTokenResponse {
-  bool valid = 1;
-  int32 uid = 2;
-  string role = 3;
-  int64 exp = 4;
-}
+message VerifyTokenRequest { string token = 1; }
+message VerifyTokenReply   { int32 uid = 1; string role = 2; string username = 3; }
 
-message DeleteUserRequest {
-  int32 uid = 1;
-}
-message DeleteUserResponse {
-  bool deleted = 1;
-}
-
-message HealthRequest {}
-message HealthResponse {
-  string status = 1;
-}
+message DeleteUserRequest { int32 uid = 1; }
+message DeleteUserReply   { bool success = 1; }

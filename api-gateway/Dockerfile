@@ -1,9 +1,7 @@
 FROM node:20-alpine
 WORKDIR /app
 COPY api-gateway/package.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+RUN npm install --omit=dev
 COPY api-gateway/src ./src
 COPY proto ./proto
-ENV NODE_ENV=production
-EXPOSE 3003
 CMD ["node", "src/index.js"]

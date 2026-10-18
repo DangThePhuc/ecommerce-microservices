@@ -1,252 +1,274 @@
-name: ecommerce
+name: ecommerce-mvp
 
-# Kiến trúc: API Gateway + 5 service (Database-per-Service) + Redis + Kafka
-# Tổng cộng 13 container:
-#   api-gateway, redis, kafka,
-#   auth-service/auth-db, customer-service/customer-db, order-service/order-db,
-#   product-service/product-db, shipment-service/shipment-db
+x-restart: &restart
+  restart: unless-stopped
 
-x-pg-health: &pg-health
-  test: ["CMD-SHELL", "pg_isready -U postgres"]
-  interval: 5s
-  timeout: 3s
-  retries: 20
-
-x-mongo-health: &mongo-health
-  test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-  interval: 5s
+x-svc-health: &svc-health
+  interval: 10s
   timeout: 5s
-  retries: 20
+  retries: 12
+  start_period: 10s
 
 services:
-  # ───────────────────────── API Gateway + Redis ─────────────────────────
-  api-gateway:
-    build:
-      context: .
-      dockerfile: api-gateway/Dockerfile
-    container_name: api-gateway
-    ports:
-      - "${GATEWAY_PORT:-3003}:3003"
-    environment:
-      PORT: 3003
-      REDIS_URL: redis://redis:6379
-      AUTH_GRPC_URL: auth-service:50051
-      CUSTOMER_GRPC_URL: customer-service:50052
-      PRODUCT_GRPC_URL: product-service:50053
-      ORDER_GRPC_URL: order-service:50054
-      SHIPMENT_GRPC_URL: shipment-service:50055
-      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
-      RATE_LIMIT_WINDOW_SEC: ${RATE_LIMIT_WINDOW_SEC:-60}
-      CACHE_TTL_SEC: ${CACHE_TTL_SEC:-30}
-    depends_on:
-      redis:
-        condition: service_healthy
-      auth-service:
-        condition: service_started
-      customer-service:
-        condition: service_started
-      product-service:
-        condition: service_started
-      order-service:
-        condition: service_started
-      shipment-service:
-        condition: service_started
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/api/health >/dev/null 2>&1 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-    restart: unless-stopped
-
+  # ====================== Ha tang ======================
   redis:
     image: redis:7-alpine
     container_name: redis
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redis-data:/data
+    <<: *restart
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 20
-    restart: unless-stopped
+      retries: 10
 
-  # ───────────────────────── Identity & Access ─────────────────────────
-  auth-service:
-    build:
-      context: .
-      dockerfile: services/auth-service/Dockerfile
-    container_name: auth-service
-    environment:
-      GRPC_PORT: 50051
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@auth-db:5432/auth_db
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-3600}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
-      STAFF_USERNAME: ${STAFF_USERNAME:-staff}
-      STAFF_PASSWORD: ${STAFF_PASSWORD:-Staff@123}
-    depends_on:
-      auth-db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  auth-db:
-    image: postgres:16-alpine
-    container_name: auth-db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: auth_db
-    volumes:
-      - auth-db-data:/var/lib/postgresql/data
-    healthcheck: *pg-health
-    restart: unless-stopped
-
-  # ───────────────────────── Customer & Membership ─────────────────────────
-  customer-service:
-    build:
-      context: .
-      dockerfile: services/customer-service/Dockerfile
-    container_name: customer-service
-    environment:
-      GRPC_PORT: 50052
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@customer-db:5432/customer_db
-    depends_on:
-      customer-db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  customer-db:
-    image: postgres:16-alpine
-    container_name: customer-db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: customer_db
-    volumes:
-      - customer-db-data:/var/lib/postgresql/data
-    healthcheck: *pg-health
-    restart: unless-stopped
-
-  # ───────────────────────── Product Catalog ─────────────────────────
-  product-service:
-    build:
-      context: .
-      dockerfile: services/product-service/Dockerfile
-    container_name: product-service
-    environment:
-      GRPC_PORT: 50053
-      MONGO_URL: mongodb://product-db:27017
-      MONGO_DB: product_db
-    depends_on:
-      product-db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  product-db:
-    image: mongo:7
-    container_name: product-db
-    volumes:
-      - product-db-data:/data/db
-    healthcheck: *mongo-health
-    restart: unless-stopped
-
-  # ───────────────────────── Order Management ─────────────────────────
-  order-service:
-    build:
-      context: .
-      dockerfile: services/order-service/Dockerfile
-    container_name: order-service
-    environment:
-      GRPC_PORT: 50054
-      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@order-db:5432/order_db
-      CUSTOMER_GRPC_URL: customer-service:50052
-      PRODUCT_GRPC_URL: product-service:50053
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_TOPIC: order-created
-      OUTBOX_INTERVAL_MS: 1000
-    depends_on:
-      order-db:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    restart: unless-stopped
-
-  order-db:
-    image: postgres:16-alpine
-    container_name: order-db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: order_db
-    volumes:
-      - order-db-data:/var/lib/postgresql/data
-    healthcheck: *pg-health
-    restart: unless-stopped
-
-  # ───────────────────────── Shipment ─────────────────────────
-  shipment-service:
-    build:
-      context: .
-      dockerfile: services/shipment-service/Dockerfile
-    container_name: shipment-service
-    environment:
-      GRPC_PORT: 50055
-      MONGO_URL: mongodb://shipment-db:27017
-      MONGO_DB: shipment_db
-      KAFKA_BROKERS: kafka:9092
-      KAFKA_TOPIC: order-created
-      KAFKA_GROUP_ID: shipment-service
-    depends_on:
-      shipment-db:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    restart: unless-stopped
-
-  shipment-db:
-    image: mongo:7
-    container_name: shipment-db
-    volumes:
-      - shipment-db-data:/data/db
-    healthcheck: *mongo-health
-    restart: unless-stopped
-
-  # ───────────────────────── Message Broker (KRaft, không cần Zookeeper) ─────────────────────────
   kafka:
     image: apache/kafka:3.8.0
     container_name: kafka
+    <<: *restart
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     volumes:
-      - kafka-data:/var/lib/kafka/data
+      - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 10s
       timeout: 10s
       retries: 20
       start_period: 20s
-    restart: unless-stopped
+
+  # ====================== Database-per-Service ======================
+  postgres-auth:
+    image: postgres:16-alpine
+    container_name: postgres-auth
+    <<: *restart
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_auth_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d auth_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  postgres-customer:
+    image: postgres:16-alpine
+    container_name: postgres-customer
+    <<: *restart
+    environment:
+      POSTGRES_DB: customer_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_customer_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d customer_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  postgres-order:
+    image: postgres:16-alpine
+    container_name: postgres-order
+    <<: *restart
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_order_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d order_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  mongo-product:
+    image: mongo:7
+    container_name: mongo-product
+    <<: *restart
+    volumes:
+      - mongo_product_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  mongo-shipment:
+    image: mongo:7
+    container_name: mongo-shipment
+    <<: *restart
+    volumes:
+      - mongo_shipment_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ====================== Microservices ======================
+  customer-service:
+    build:
+      context: .
+      dockerfile: services/customer-service/Dockerfile
+    container_name: customer-service
+    <<: *restart
+    environment:
+      PORT: 3002
+      GRPC_PORT: 50052
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-customer:5432/customer_db
+    depends_on:
+      postgres-customer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health > /dev/null || exit 1"]
+      <<: *svc-health
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: auth-service
+    <<: *restart
+    environment:
+      PORT: 3001
+      GRPC_PORT: 50051
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-auth:5432/auth_db
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      STAFF_USERNAME: ${STAFF_USERNAME}
+      STAFF_PASSWORD: ${STAFF_PASSWORD}
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health > /dev/null || exit 1"]
+      <<: *svc-health
+
+  product-service:
+    build:
+      context: .
+      dockerfile: services/product-service/Dockerfile
+    container_name: product-service
+    <<: *restart
+    environment:
+      PORT: 3003
+      GRPC_PORT: 50053
+      MONGO_URL: mongodb://mongo-product:27017
+    depends_on:
+      mongo-product:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health > /dev/null || exit 1"]
+      <<: *svc-health
+
+  order-service:
+    build:
+      context: .
+      dockerfile: services/order-service/Dockerfile
+    container_name: order-service
+    <<: *restart
+    environment:
+      PORT: 3004
+      GRPC_PORT: 50054
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-order:5432/order_db
+      PRODUCT_GRPC_URL: product-service:50053
+      KAFKA_BROKER: kafka:9092
+      ORDER_CREATED_TOPIC: ${ORDER_CREATED_TOPIC}
+    depends_on:
+      postgres-order:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3004/health > /dev/null || exit 1"]
+      <<: *svc-health
+
+  shipment-service:
+    build:
+      context: .
+      dockerfile: services/shipment-service/Dockerfile
+    container_name: shipment-service
+    <<: *restart
+    environment:
+      PORT: 3005
+      GRPC_PORT: 50055
+      MONGO_URL: mongodb://mongo-shipment:27017
+      KAFKA_BROKER: kafka:9092
+      ORDER_CREATED_TOPIC: ${ORDER_CREATED_TOPIC}
+    depends_on:
+      mongo-shipment:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health > /dev/null || exit 1"]
+      <<: *svc-health
+
+  # ====================== API Gateway ======================
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    <<: *restart
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      PORT: 8080
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS}
+      AUTH_GRPC_URL: auth-service:50051
+      CUSTOMER_GRPC_URL: customer-service:50052
+      PRODUCT_GRPC_URL: product-service:50053
+      ORDER_GRPC_URL: order-service:50054
+      SHIPMENT_GRPC_URL: shipment-service:50055
+      AUTH_HEALTH_URL: http://auth-service:3001/health
+      CUSTOMER_HEALTH_URL: http://customer-service:3002/health
+      PRODUCT_HEALTH_URL: http://product-service:3003/health
+      ORDER_HEALTH_URL: http://order-service:3004/health
+      SHIPMENT_HEALTH_URL: http://shipment-service:3005/health
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      customer-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      shipment-service:
+        condition: service_healthy
 
 volumes:
-  redis-data:
-  auth-db-data:
-  customer-db-data:
-  product-db-data:
-  order-db-data:
-  shipment-db-data:
-  kafka-data:
+  kafka_data:
+  pg_auth_data:
+  pg_customer_data:
+  pg_order_data:
+  mongo_product_data:
+  mongo_shipment_data:
