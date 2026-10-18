@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+// Order Management Bounded Context
+// Database: PostgreSQL (order-db) - bảng orders, order_details, outbox_events
+// Phát sự kiện OrderCreated lên Kafka topic "order-created" bằng Outbox Pattern
+package order;
+
+service OrderService {
+  rpc CreateOrder (CreateOrderRequest) returns (OrderResponse);
+  rpc GetOrder (GetOrderRequest) returns (OrderResponse);
+  rpc ListOrders (ListOrdersRequest) returns (ListOrdersResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message OrderItemInput {
+  int32 pid = 1;
+  int32 qty = 2;
+}
+
+message CreateOrderRequest {
+  int32 uid = 1;
+  repeated OrderItemInput items = 2;
+}
+
+message GetOrderRequest {
+  int32 oid = 1;
+  int32 uid = 2;      // người đang gọi
+  string role = 3;    // admin xem được mọi đơn hàng
+}
+
+message ListOrdersRequest {
+  int32 uid = 1;
+  string role = 2;
+}
+
+message OrderItem {
+  int32 pid = 1;
+  int32 qty = 2;
+  double unit_price = 3;
+}
+
+message OrderResponse {
+  int32 oid = 1;
+  int32 uid = 2;
+  double discount = 3;       // phần trăm giảm giá (ví dụ 10 = 10%)
+  double total_amount = 4;   // tổng tiền sau giảm giá
+  string created_at = 5;     // thời gian đặt hàng (ISO-8601)
+  repeated OrderItem items = 6;
+}
+
+message ListOrdersResponse {
+  repeated OrderResponse items = 1;
+}
+
+message HealthRequest {}
+message HealthResponse {
+  string status = 1;
+  string kafka = 2;
+}

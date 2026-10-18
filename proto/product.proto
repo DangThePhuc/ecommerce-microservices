@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+// Product Catalog Bounded Context
+// Database: MongoDB (product-db) - collection products
+package product;
+
+service ProductService {
+  rpc ListProducts (ListProductsRequest) returns (ListProductsResponse);
+  rpc GetProduct (GetProductRequest) returns (ProductResponse);
+  rpc CreateProduct (CreateProductRequest) returns (ProductResponse);
+  rpc UpdateProduct (UpdateProductRequest) returns (ProductResponse);
+  rpc DeleteProduct (GetProductRequest) returns (DeleteProductResponse);
+
+  // Dùng cho luồng đặt hàng (Order Service gọi qua gRPC)
+  rpc CheckStock (StockRequest) returns (StockResponse);     // bước 6: kiểm tra số lượng
+  rpc ReserveStock (StockRequest) returns (StockResponse);   // bước 7: trừ tồn kho (all-or-nothing)
+  rpc ReleaseStock (StockRequest) returns (ReleaseResponse); // bù trừ khi lưu Order thất bại
+
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message ListProductsRequest {}
+message ListProductsResponse {
+  repeated ProductResponse items = 1;
+}
+
+message GetProductRequest {
+  int32 pid = 1;
+}
+
+message CreateProductRequest {
+  string pname = 1;
+  double price = 2;
+  int32 quantity = 3;
+}
+
+message UpdateProductRequest {
+  int32 pid = 1;
+  string pname = 2;
+  double price = 3;
+  int32 quantity = 4;
+}
+
+message ProductResponse {
+  int32 pid = 1;
+  string pname = 2;
+  double price = 3;
+  int32 quantity = 4;
+}
+
+message DeleteProductResponse {
+  int32 pid = 1;
+}
+
+message StockItem {
+  int32 pid = 1;
+  int32 qty = 2;
+}
+message StockRequest {
+  repeated StockItem items = 1;
+}
+message StockLine {
+  int32 pid = 1;
+  string pname = 2;
+  double unit_price = 3;
+  int32 qty = 4;
+}
+message StockResponse {
+  repeated StockLine items = 1;
+}
+message ReleaseResponse {
+  bool released = 1;
+}
+
+message HealthRequest {}
+message HealthResponse {
+  string status = 1;
+}

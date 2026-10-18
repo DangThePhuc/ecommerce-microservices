@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+// Customer & Membership Bounded Context
+// Database: PostgreSQL (customer-db) - bảng memberships, customers
+package customer;
+
+service CustomerService {
+  rpc CreateCustomer (CreateCustomerRequest) returns (CustomerResponse);
+  rpc GetCustomer (GetCustomerRequest) returns (CustomerResponse);
+  rpc UpdateCustomer (UpdateCustomerRequest) returns (CustomerResponse);
+  // Order Service gọi RPC này để lấy score phục vụ tính discount
+  rpc GetMembership (GetCustomerRequest) returns (MembershipResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message CreateCustomerRequest {
+  int32 uid = 1;        // tham chiếu tới User của Identity & Access
+  string fullname = 2;
+  int32 mid = 3;        // 0 = dùng hạng mặc định (mid = 1, score = 10)
+}
+
+message GetCustomerRequest {
+  int32 uid = 1;
+}
+
+message UpdateCustomerRequest {
+  int32 uid = 1;
+  string fullname = 2;  // rỗng = không đổi
+  int32 mid = 3;        // 0 = không đổi
+}
+
+message CustomerResponse {
+  int32 uid = 1;
+  string fullname = 2;
+  int32 mid = 3;
+  string mname = 4;
+  int32 score = 5;
+}
+
+message MembershipResponse {
+  int32 uid = 1;
+  string fullname = 2;
+  int32 mid = 3;
+  string mname = 4;
+  int32 score = 5;
+}
+
+message HealthRequest {}
+message HealthResponse {
+  string status = 1;
+}

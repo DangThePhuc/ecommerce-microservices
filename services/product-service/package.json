@@ -1,0 +1,13 @@
+{
+  "name": "product-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Product Catalog Bounded Context",
+  "main": "src/index.js",
+  "scripts": { "start": "node src/index.js" },
+  "dependencies": {
+    "@grpc/grpc-js": "1.12.2",
+    "@grpc/proto-loader": "0.7.13",
+    "mongodb": "6.10.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "order-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Order Management Bounded Context",
+  "main": "src/index.js",
+  "scripts": { "start": "node src/index.js" },
+  "dependencies": {
+    "@grpc/grpc-js": "1.12.2",
+    "@grpc/proto-loader": "0.7.13",
+    "kafkajs": "2.2.4",
+    "pg": "8.13.1"
+  }
+}
