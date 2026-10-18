@@ -30,5 +30,5 @@ function statusText(s) {
   return ({ 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 409: 'Conflict', 429: 'Too Many Requests', 503: 'Service Unavailable', 504: 'Gateway Timeout' })[s] || 'Internal Server Error';
 }
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3003;
 app.listen(PORT, () => console.log(`API Gateway listening on :${PORT}`));

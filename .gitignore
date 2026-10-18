@@ -4,7 +4,6 @@ node_modules/
 # Secrets / môi trường - KHÔNG commit
 .env
 .env.*
-!.env.example
 
 # Logs
 *.log

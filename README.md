@@ -16,7 +16,7 @@ Client ──REST──► API Gateway ──gRPC──► Auth · Customer · O
 ```
 .
 ├── docker-compose.yml            # 13 container (xem mục 3)
-├── .env.example                  # mẫu biến môi trường (copy thành .env, KHÔNG commit .env)
+├── .env                          # biến môi trường (đã nằm trong .gitignore, không commit lên GitHub)
 ├── .gitignore
 ├── proto/                        # HỢP ĐỒNG gRPC giữa các service (mục 2)
 │   ├── auth.proto  customer.proto  product.proto  order.proto  shipment.proto
@@ -58,18 +58,17 @@ Dockerfile của mỗi service build với context là thư mục gốc để co
 Yêu cầu: Docker + Docker Compose v2.
 
 ```bash
-cp .env.example .env            # tùy chọn; không có .env vẫn chạy với giá trị mặc định
 docker compose up -d --build
 docker compose ps               # hoặc:
 docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
-curl http://localhost:8080/api/health
+curl http://localhost:3003/api/health
 ```
 
 Phải thấy đúng **13 container** như thiết kế:
 
 | Nhóm | Container |
 |---|---|
-| Gateway | `api-gateway` (cổng 8080), `redis` |
+| Gateway | `api-gateway` (cổng 3003), `redis` |
 | Identity & Access | `auth-service`, `auth-db` (PostgreSQL) |
 | Customer & Membership | `customer-service`, `customer-db` (PostgreSQL) |
 | Order Management | `order-service`, `order-db` (PostgreSQL) |
@@ -133,7 +132,7 @@ hoặc import `postman/Ecommerce-Microservices.postman_collection.json` (chạy 
 
 Ví dụ bằng curl:
 ```bash
-B=http://localhost:8080
+B=http://localhost:3003
 ADMIN=$(curl -s $B/api/auth/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"Admin@123"}' | sed 's/.*"accessToken":"\([^"]*\)".*/\1/')
 curl -s $B/api/products -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' -d '{"pname":"Laptop","price":1500,"quantity":100}'
 curl -s $B/api/products -H "Authorization: Bearer $ADMIN"                                   # TC-PRO-01

@@ -7,11 +7,11 @@
 //   TC-ORD-05  Tạo Order và phát sự kiện OrderCreated lên Kafka
 //
 // Chạy:  docker compose up -d --build   (đợi healthy)   rồi:   node scripts/test-api.js
-// Biến môi trường: BASE_URL (mặc định http://localhost:8080), ADMIN_USERNAME, ADMIN_PASSWORD
+// Biến môi trường: BASE_URL (mặc định http://localhost:3003), ADMIN_USERNAME, ADMIN_PASSWORD
 const { execSync } = require('child_process');
 const path = require('path');
 
-const BASE = process.env.BASE_URL || 'http://localhost:8080';
+const BASE = process.env.BASE_URL || 'http://localhost:3003';
 const ADMIN = { username: process.env.ADMIN_USERNAME || 'admin', password: process.env.ADMIN_PASSWORD || 'Admin@123' };
 const ROOT = path.join(__dirname, '..');
 

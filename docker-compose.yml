@@ -26,9 +26,9 @@ services:
       dockerfile: api-gateway/Dockerfile
     container_name: api-gateway
     ports:
-      - "${GATEWAY_PORT:-8080}:8080"
+      - "${GATEWAY_PORT:-3003}:3003"
     environment:
-      PORT: 8080
+      PORT: 3003
       REDIS_URL: redis://redis:6379
       AUTH_GRPC_URL: auth-service:50051
       CUSTOMER_GRPC_URL: customer-service:50052
@@ -52,7 +52,7 @@ services:
       shipment-service:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/api/health >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
