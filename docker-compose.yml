@@ -55,8 +55,8 @@ services:
     <<: *restart
     environment:
       POSTGRES_DB: auth_db
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_pass}
     volumes:
       - pg_auth_data:/var/lib/postgresql/data
     healthcheck:
@@ -71,8 +71,8 @@ services:
     <<: *restart
     environment:
       POSTGRES_DB: customer_db
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_pass}
     volumes:
       - pg_customer_data:/var/lib/postgresql/data
     healthcheck:
@@ -87,8 +87,8 @@ services:
     <<: *restart
     environment:
       POSTGRES_DB: order_db
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_pass}
     volumes:
       - pg_order_data:/var/lib/postgresql/data
     healthcheck:
@@ -133,7 +133,7 @@ services:
     environment:
       PORT: 3002
       GRPC_PORT: 50052
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-customer:5432/customer_db
+      DATABASE_URL: postgres://${POSTGRES_USER:-ecommerce}:${POSTGRES_PASSWORD:-ecommerce_pass}@postgres-customer:5432/customer_db
     depends_on:
       postgres-customer:
         condition: service_healthy
@@ -150,13 +150,13 @@ services:
     environment:
       PORT: 3001
       GRPC_PORT: 50051
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-auth:5432/auth_db
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
-      ADMIN_USERNAME: ${ADMIN_USERNAME}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      STAFF_USERNAME: ${STAFF_USERNAME}
-      STAFF_PASSWORD: ${STAFF_PASSWORD}
+      DATABASE_URL: postgres://${POSTGRES_USER:-ecommerce}:${POSTGRES_PASSWORD:-ecommerce_pass}@postgres-auth:5432/auth_db
+      JWT_SECRET: ${JWT_SECRET:-change_me_to_a_long_random_secret}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-3600}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
+      STAFF_USERNAME: ${STAFF_USERNAME:-staff}
+      STAFF_PASSWORD: ${STAFF_PASSWORD:-Staff@123}
     depends_on:
       postgres-auth:
         condition: service_healthy
@@ -190,10 +190,10 @@ services:
     environment:
       PORT: 3004
       GRPC_PORT: 50054
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-order:5432/order_db
+      DATABASE_URL: postgres://${POSTGRES_USER:-ecommerce}:${POSTGRES_PASSWORD:-ecommerce_pass}@postgres-order:5432/order_db
       PRODUCT_GRPC_URL: product-service:50053
       KAFKA_BROKER: kafka:9092
-      ORDER_CREATED_TOPIC: ${ORDER_CREATED_TOPIC}
+      ORDER_CREATED_TOPIC: ${ORDER_CREATED_TOPIC:-order-created}
     depends_on:
       postgres-order:
         condition: service_healthy
@@ -216,7 +216,7 @@ services:
       GRPC_PORT: 50055
       MONGO_URL: mongodb://mongo-shipment:27017
       KAFKA_BROKER: kafka:9092
-      ORDER_CREATED_TOPIC: ${ORDER_CREATED_TOPIC}
+      ORDER_CREATED_TOPIC: ${ORDER_CREATED_TOPIC:-order-created}
     depends_on:
       mongo-shipment:
         condition: service_healthy
@@ -234,13 +234,13 @@ services:
     container_name: api-gateway
     <<: *restart
     ports:
-      - "${GATEWAY_PORT:-8080}:8080"
+      - "${GATEWAY_PORT:-3003}:8080"
     environment:
       PORT: 8080
       REDIS_URL: redis://redis:6379
-      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX}
-      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS}
-      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-15}
       AUTH_GRPC_URL: auth-service:50051
       CUSTOMER_GRPC_URL: customer-service:50052
       PRODUCT_GRPC_URL: product-service:50053

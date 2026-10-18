@@ -1,7 +1,7 @@
 // Chay: node tests/run-tests.js   (Node >= 18, he thong da `docker compose up`)
 // Kiem tra cac test case trong 25_TestCases_5_BoundedContexts.xlsx (phan goi duoc qua REST).
 // TC-SHP-02 va TC-SHP-05 can ban event thu cong vao Kafka (xem huong dan CLI).
-const BASE = process.env.BASE_URL || 'http://localhost:8080';
+const BASE = process.env.BASE_URL || 'http://localhost:3003';
 const ADMIN = { username: process.env.ADMIN_USERNAME || 'admin', password: process.env.ADMIN_PASSWORD || 'Admin@123' };
 const STAFF = { username: process.env.STAFF_USERNAME || 'staff', password: process.env.STAFF_PASSWORD || 'Staff@123' };
 
