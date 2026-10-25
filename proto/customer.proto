@@ -2,14 +2,21 @@ syntax = "proto3";
 
 // Customer Service (Customer & Membership Bounded Context): bang Customer, Membership.
 // DB: PostgreSQL (Customer DB). Duoc API Gateway goi qua gRPC.
+//
+// Luu y: Customer chua dang ky member thi mid = 0 (NULL trong DB), mname = "", score = 0.
 package customer;
 
 service CustomerService {
-  rpc CreateCustomer (CreateCustomerRequest) returns (Customer);        // sau khi dang ky: hang Normal
-  rpc GetCustomer    (GetCustomerRequest)    returns (Customer);        // BPM buoc 3: uid, fullname, mid
-  rpc UpdateCustomer (UpdateCustomerRequest) returns (MessageReply);
-  rpc GetMembership  (GetCustomerRequest)    returns (Membership);      // BPM buoc 4: mname, score
+  rpc CreateCustomer    (CreateCustomerRequest) returns (Customer);      // sau khi dang ky tai khoan: CHUA la member
+  rpc GetCustomer       (GetCustomerRequest)    returns (Customer);      // BPM buoc 3: uid, fullname, mid + mname, score (neu la member)
+  rpc UpdateCustomer    (UpdateCustomerRequest) returns (Customer);      // tra thong tin Customer sau khi cap nhat
+  rpc GetMembership     (GetCustomerRequest)    returns (Membership);    // BPM buoc 4: mname, score
+  rpc RegisterMembership (GetCustomerRequest)   returns (Customer);      // khach hang dang ky de tro thanh member (hang Normal)
+  rpc ListCustomers     (Empty)                 returns (CustomerList);  // ADMIN: tat ca Customer
+  rpc ListMembers       (Empty)                 returns (CustomerList);  // ADMIN: tat ca member (Customer co mid)
 }
+
+message Empty {}
 
 message CreateCustomerRequest { int32 uid = 1; string fullname = 2; }
 message GetCustomerRequest    { int32 uid = 1; }
@@ -22,6 +29,6 @@ message UpdateCustomerRequest {
   int32  mid          = 5;
 }
 
-message Customer   { int32 uid = 1; string fullname = 2; int32 mid = 3; }
+message Customer   { int32 uid = 1; string fullname = 2; int32 mid = 3; string mname = 4; int32 score = 5; }
 message Membership { int32 uid = 1; int32 mid = 2; string mname = 3; int32 score = 4; }
-message MessageReply { string message = 1; int32 id = 2; }
+message CustomerList { repeated Customer items = 1; }

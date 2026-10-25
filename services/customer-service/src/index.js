@@ -56,8 +56,10 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS customers (
       uid INT PRIMARY KEY,
       fullname VARCHAR(100) NOT NULL,
-      mid INT NOT NULL REFERENCES memberships(mid)
+      mid INT REFERENCES memberships(mid)
     )`);
+  // mid cho phep NULL: khach hang chua dang ky member thi chua co hang
+  await pool.query('ALTER TABLE customers ALTER COLUMN mid DROP NOT NULL');
 }
 
 const def = protoLoader.loadSync(path.join(__dirname, '../proto/customer.proto'), {
@@ -65,35 +67,74 @@ const def = protoLoader.loadSync(path.join(__dirname, '../proto/customer.proto')
 });
 const customerPkg = grpc.loadPackageDefinition(def).customer;
 
+// Customer kem hang thanh vien (mname, score)
+async function findCustomer(uid) {
+  const r = await pool.query(
+    `SELECT c.uid, c.fullname, c.mid, m.mname, m.score
+     FROM customers c LEFT JOIN memberships m ON m.mid = c.mid WHERE c.uid=$1`, [uid]);
+  return r.rows[0];
+}
+
 const handlers = {
-  // goi boi Gateway ngay sau khi dang ky: mac dinh hang Normal (score 10)
+  // goi boi Gateway ngay sau khi dang ky tai khoan: chi tao Customer, CHUA co hang thanh vien (mid = NULL)
   CreateCustomer: wrap(async (call) => {
     const { uid, fullname } = call.request;
     if (!uid || !fullname || !fullname.trim()) throw new GrpcError(grpc.status.INVALID_ARGUMENT, 'uid va fullname la bat buoc');
     await pool.query(
-      `INSERT INTO customers(uid, fullname, mid)
-       VALUES ($1, $2, (SELECT mid FROM memberships WHERE mname='Normal')) ON CONFLICT (uid) DO NOTHING`,
+      `INSERT INTO customers(uid, fullname) VALUES ($1, $2) ON CONFLICT (uid) DO NOTHING`,
       [uid, fullname.trim().slice(0, 100)]
     );
-    const r = await pool.query('SELECT uid, fullname, mid FROM customers WHERE uid=$1', [uid]);
-    return r.rows[0];
+    return findCustomer(uid);
   }),
 
   GetCustomer: wrap(async (call) => {
     const uid = call.request.uid;
     assertAccess(call, uid);
-    const r = await pool.query('SELECT uid, fullname, mid FROM customers WHERE uid=$1', [uid]);
-    if (!r.rows[0]) throw new GrpcError(grpc.status.NOT_FOUND, 'Customer not found');
-    return r.rows[0];
+    const c = await findCustomer(uid);
+    if (!c) throw new GrpcError(grpc.status.NOT_FOUND, 'Customer not found');
+    return c;
   }),
 
   GetMembership: wrap(async (call) => {
     const uid = call.request.uid;
     assertAccess(call, uid);
+    const c = await findCustomer(uid);
+    if (!c) throw new GrpcError(grpc.status.NOT_FOUND, 'Customer not found');
+    if (!c.mid) throw new GrpcError(grpc.status.NOT_FOUND, 'Customer has not registered membership');
+    return { uid: c.uid, mid: c.mid, mname: c.mname, score: c.score };
+  }),
+
+  // khach hang dang ky de tro thanh member: bat dau o hang Normal (hang cao hon do ADMIN nang cap)
+  RegisterMembership: wrap(async (call) => {
+    const uid = call.request.uid;
+    assertAccess(call, uid);
+    const c = await findCustomer(uid);
+    if (!c) throw new GrpcError(grpc.status.NOT_FOUND, 'Customer not found');
+    if (c.mid) throw new GrpcError(grpc.status.ALREADY_EXISTS, 'Customer da la member');
+    await pool.query(`UPDATE customers SET mid = (SELECT mid FROM memberships WHERE mname='Normal') WHERE uid=$1`, [uid]);
+    return findCustomer(uid);
+  }),
+
+  // ADMIN: danh sach tat ca Customer (kem hang thanh vien)
+  ListCustomers: wrap(async (call) => {
+    const c = caller(call);
+    if (!c.uid) throw new GrpcError(grpc.status.UNAUTHENTICATED, 'Unauthorized');
+    if (c.role !== 'ADMIN') throw new GrpcError(grpc.status.PERMISSION_DENIED, 'Forbidden: Admin only');
     const r = await pool.query(
-      `SELECT c.uid, m.mid, m.mname, m.score FROM customers c JOIN memberships m ON m.mid=c.mid WHERE c.uid=$1`, [uid]);
-    if (!r.rows[0]) throw new GrpcError(grpc.status.NOT_FOUND, 'Customer not found');
-    return r.rows[0];
+      `SELECT c.uid, c.fullname, c.mid, m.mname, m.score
+       FROM customers c LEFT JOIN memberships m ON m.mid = c.mid ORDER BY c.uid`);
+    return { items: r.rows };
+  }),
+
+  // ADMIN: xem tat ca member = cac Customer da co mid
+  ListMembers: wrap(async (call) => {
+    const c = caller(call);
+    if (!c.uid) throw new GrpcError(grpc.status.UNAUTHENTICATED, 'Unauthorized');
+    if (c.role !== 'ADMIN') throw new GrpcError(grpc.status.PERMISSION_DENIED, 'Forbidden: Admin only');
+    const r = await pool.query(
+      `SELECT c.uid, c.fullname, c.mid, m.mname, m.score
+       FROM customers c JOIN memberships m ON m.mid = c.mid ORDER BY c.uid`);
+    return { items: r.rows };
   }),
 
   UpdateCustomer: wrap(async (call) => {
@@ -111,7 +152,7 @@ const handlers = {
       [q.uid, q.has_fullname ? q.fullname.trim().slice(0, 100) : null, q.has_mid ? q.mid : null]
     );
     if (!r.rows[0]) throw new GrpcError(grpc.status.NOT_FOUND, 'Customer not found');
-    return { message: 'Customer updated successfully', id: q.uid };
+    return findCustomer(q.uid); // thong tin Customer sau khi cap nhat
   }),
 };
 
