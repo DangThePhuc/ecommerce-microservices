@@ -96,7 +96,7 @@ morgan.token('user', (req) => (req.user ? `${req.user.uid}(${req.user.role})` : 
 app.use(morgan(':date[iso] :remote-addr :method :url :status :response-time ms user=:user cache=:res[x-cache]'));
 
 // Health check (public)
-app.get('/health', async (req, res) => {
+app.get('/api/health', async (req, res) => {
   const deps = {};
   deps.redis = await redis.ping().then(() => 'UP').catch(() => 'DOWN');
   await Promise.all(Object.entries(healthUrls).map(async ([name, url]) => {
@@ -160,7 +160,7 @@ const need = (...roles) => [authenticate, (req, res, next) =>
 const authed = [authenticate];
 
 // ---------------- Auth ----------------
-app.post('/auth/register', h(async (req, res) => {
+app.post('/api/auth/register', h(async (req, res) => {
   const { username, password, email, fullname } = req.body || {};
   if (typeof username !== 'string' || typeof password !== 'string') throw bad('username va password la bat buoc');
   if (email && !/^\S+@\S+\.\S+$/.test(email)) throw bad('email khong hop le');
@@ -176,7 +176,7 @@ app.post('/auth/register', h(async (req, res) => {
   res.status(201).json({ message: 'User registered successfully', uid });
 }));
 
-app.post('/auth/login', h(async (req, res) => {
+app.post('/api/auth/login', h(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) throw bad('username va password la bat buoc');
   const r = await rpc(authC, 'Login', { username: String(username), password: String(password) });
@@ -194,36 +194,46 @@ const listView = (c) =>
 // danh sach Member: them mid, mname, score
 const memberView = (c) => ({ uid: c.uid, fullname: c.fullname, mid: c.mid, mname: c.mname, score: c.score });
 
+// thong tin cua chinh khach hang: khong co uid
+const selfView = (c) =>
+  c.mid ? { fullname: c.fullname, mid: c.mid, mname: c.mname, score: c.score } : { fullname: c.fullname };
+
 // ADMIN: xem tat ca Customer (uid, fullname, mid neu co)
-app.get('/customers', need('ADMIN'), h(async (req, res) => {
+app.get('/api/customers', need('ADMIN'), h(async (req, res) => {
   const r = await rpc(customerC, 'ListCustomers', {}, req.user);
   res.json({ items: r.items.map(listView) });
 }));
 
-// Xem membership (uid, fullname, mid, mname, score):
-//  - ADMIN: tat ca member cung luc
-//  - Customer thuong: chi membership cua chinh minh (danh sach rong neu chua dang ky)
-app.get('/membership', authed, h(async (req, res) => {
+// Xem membership:
+//  - ADMIN: tat ca member cung luc (uid, fullname, mid, mname, score)
+//  - Customer thuong: chi membership cua chinh minh, KHONG tra uid (danh sach rong neu chua dang ky)
+app.get('/api/membership', authed, h(async (req, res) => {
   if (req.user.role === 'ADMIN') {
     const r = await rpc(customerC, 'ListMembers', {}, req.user);
     return res.json({ items: r.items.map(memberView) });
   }
   const c = await rpc(customerC, 'GetCustomer', { uid: req.user.uid }, req.user);
-  res.json({ items: c.mid ? [memberView(c)] : [] });
+  res.json({ items: c.mid ? [selfView(c)] : [] });
 }));
 
-// Khach hang dang ky de tro thanh member (hang Normal)
-app.post('/customers/:uid/membership', authed, h(async (req, res) => {
-  const c = await rpc(customerC, 'RegisterMembership', { uid: toInt(req.params.uid) }, req.user);
-  res.status(201).json(customerView(c));
+// Khach hang dang ky de tro thanh member (hang Normal). Nguoi dung lay tu token, khong can uid.
+app.post('/api/membership', authed, h(async (req, res) => {
+  const c = await rpc(customerC, 'RegisterMembership', { uid: req.user.uid }, req.user);
+  res.status(201).json(selfView(c));
 }));
 
-app.get('/customers/:uid', authed, h(async (req, res) => {
+// Khach hang xem thong tin ca nhan cua minh (KHONG tra uid). Phai dat truoc /api/customers/:uid
+app.get('/api/customers/me', authed, h(async (req, res) => {
+  const c = await rpc(customerC, 'GetCustomer', { uid: req.user.uid }, req.user);
+  res.json(selfView(c));
+}));
+
+app.get('/api/customers/:uid', authed, h(async (req, res) => {
   const c = await rpc(customerC, 'GetCustomer', { uid: toInt(req.params.uid) }, req.user);
   res.json(customerView(c));
 }));
 
-app.put('/customers/:uid', authed, h(async (req, res) => {
+app.put('/api/customers/:uid', authed, h(async (req, res) => {
   const { fullname, mid } = req.body || {};
   if (fullname !== undefined && typeof fullname !== 'string') throw bad('fullname khong hop le');
   if (mid !== undefined && !Number.isInteger(mid)) throw bad('mid khong hop le');
@@ -236,18 +246,18 @@ app.put('/customers/:uid', authed, h(async (req, res) => {
 }));
 
 // ---------------- Product ----------------
-app.get('/products', authed, h(async (req, res) => {
+app.get('/api/products', authed, h(async (req, res) => {
   await cached('cache:products:all', async () => {
     const r = await rpc(productC, 'ListProducts', {}, req.user);
     return { items: r.items };
   }, res);
 }));
 
-app.get('/products/:pid', authed, h(async (req, res) => {
+app.get('/api/products/:pid', authed, h(async (req, res) => {
   await cached(`cache:products:${req.params.pid}`, () => rpc(productC, 'GetProduct', { pid: toInt(req.params.pid) }, req.user), res);
 }));
 
-app.post('/products', need('ADMIN'), h(async (req, res) => {
+app.post('/api/products', need('ADMIN'), h(async (req, res) => {
   const { pname, price, quantity } = req.body || {};
   if (typeof pname !== 'string' || typeof price !== 'number' || !Number.isInteger(quantity)) {
     throw bad('pname (chuoi), price (so), quantity (so nguyen) la bat buoc');
@@ -258,7 +268,7 @@ app.post('/products', need('ADMIN'), h(async (req, res) => {
   res.status(201).json(p);
 }));
 
-app.put('/products/:pid', need('ADMIN'), h(async (req, res) => {
+app.put('/api/products/:pid', need('ADMIN'), h(async (req, res) => {
   const { pname, price, quantity } = req.body || {};
   if ((pname !== undefined && typeof pname !== 'string') || (price !== undefined && typeof price !== 'number') ||
       (quantity !== undefined && !Number.isInteger(quantity))) throw bad('Du lieu khong hop le');
@@ -273,7 +283,7 @@ app.put('/products/:pid', need('ADMIN'), h(async (req, res) => {
   res.json({ message: r.message, pid: r.pid });
 }));
 
-app.delete('/products/:pid', need('ADMIN'), h(async (req, res) => {
+app.delete('/api/products/:pid', need('ADMIN'), h(async (req, res) => {
   await clearCache();
   const r = await rpc(productC, 'DeleteProduct', { pid: toInt(req.params.pid) }, req.user);
   await clearCache();
@@ -281,7 +291,7 @@ app.delete('/products/:pid', need('ADMIN'), h(async (req, res) => {
 }));
 
 // ---------------- Order (BPM: Dat hang) ----------------
-app.post('/orders', authed, h(async (req, res) => {
+app.post('/api/orders', authed, h(async (req, res) => {
   const items = normalizeItems((req.body || {}).items);
   if (!items) throw bad('items khong hop le (pid, qty phai la so nguyen duong)');
   // buoc 3: lay thong tin Customer (uid, fullname, mid) - 404 neu khong ton tai
@@ -299,29 +309,29 @@ app.post('/orders', authed, h(async (req, res) => {
   });
 }));
 
-app.get('/orders', authed, h(async (req, res) => {
+app.get('/api/orders', authed, h(async (req, res) => {
   const r = await rpc(orderC, 'ListOrders', {}, req.user);
   res.json({ items: r.items.map(({ oid, uid, discount, total_amount }) => ({ oid, uid, discount, total_amount })) });
 }));
 
-app.get('/orders/:oid', authed, h(async (req, res) => {
+app.get('/api/orders/:oid', authed, h(async (req, res) => {
   const o = await rpc(orderC, 'GetOrder', { oid: toInt(req.params.oid) }, req.user);
   res.json({ oid: o.oid, uid: o.uid, discount: o.discount, subtotal: o.subtotal, total_amount: o.total_amount, items: o.items });
 }));
 
 // ---------------- Shipment ----------------
-app.get('/shipments', authed, h(async (req, res) => {
+app.get('/api/shipments', authed, h(async (req, res) => {
   const has = req.query.oid !== undefined;
   const r = await rpc(shipmentC, 'ListShipments', { has_oid: has, oid: has ? toInt(req.query.oid) : 0 }, req.user);
   res.json({ items: r.items });
 }));
 
-app.get('/shipments/:shipid', authed, h(async (req, res) => {
+app.get('/api/shipments/:shipid', authed, h(async (req, res) => {
   const s = await rpc(shipmentC, 'GetShipment', { shipid: toInt(req.params.shipid) }, req.user);
   res.json(s);
 }));
 
-app.put('/shipments/:shipid', need('SHIPMENT_STAFF', 'ADMIN'), h(async (req, res) => {
+app.put('/api/shipments/:shipid', need('SHIPMENT_STAFF', 'ADMIN'), h(async (req, res) => {
   const { status } = req.body || {};
   if (typeof status !== 'string') throw bad('status la bat buoc');
   const s = await rpc(shipmentC, 'UpdateShipmentStatus', { shipid: toInt(req.params.shipid), status }, req.user);
